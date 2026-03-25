@@ -64,6 +64,7 @@ const ctx = canvas.getContext('2d');
 const errorOverlay = document.getElementById('errorOverlay');
 const W = 1600, H = 900;
 const BOSS_GROUND_Y = 650;
+const MOBILE_DISPLAY_ZOOM = 1.1;
 const viewport = {
   width: window.innerWidth || W,
   height: window.innerHeight || H,
@@ -86,7 +87,9 @@ let TOUCH_JOY_HINT_Y = H - 140;
 function resizeCanvasDisplay() {
   const vw = window.innerWidth || document.documentElement.clientWidth || W;
   const vh = window.innerHeight || document.documentElement.clientHeight || H;
-  const scale = Math.min(vw / W, vh / H);
+  const baseScale = Math.min(vw / W, vh / H);
+  const zoom = viewport.mobile ? MOBILE_DISPLAY_ZOOM : 1;
+  const scale = baseScale * zoom;
   canvas.style.width = `${Math.max(1, Math.floor(W * scale))}px`;
   canvas.style.height = `${Math.max(1, Math.floor(H * scale))}px`;
 }
@@ -975,6 +978,18 @@ const player = {
   get top() { return this.y; },
   get bottom() { return this.y + this.h; },
 
+  ensureValidWeaponSelection() {
+    if (!this.weapons.length) {
+      this.weapons = ['gun'];
+      this.currentWeapon = 0;
+      return;
+    }
+    if (this.currentWeapon < 0 || this.currentWeapon >= this.weapons.length) {
+      const gunIndex = this.weapons.indexOf('gun');
+      this.currentWeapon = gunIndex >= 0 ? gunIndex : 0;
+    }
+  },
+
   takeDamage(dmg) {
     if (this.invincible > 0) return;
     this.hp -= dmg;
@@ -988,16 +1003,19 @@ const player = {
 
   gainAbility(ab) {
     if (ab === 'fly') {
-      // Jetpack fuel upgrade instead of fly timer
-      this.maxFuel += 120;
-      this.fuel = Math.min(this.fuel + 120, this.maxFuel);
+      // Wing upgrades improve both burn time and lift.
+      this.maxFuel += 160;
+      this.fuel = Math.min(this.fuel + 180, this.maxFuel);
+      this.thrustForce = Math.max(this.thrustForce, 0.7);
+      this.ensureValidWeaponSelection();
       SFX.pickup();
-      notify('FUEL TANK UPGRADED! (+120)', '#FFD700');
+      notify('FUEL TANK UPGRADED! (+160 FUEL, +THRUST)', '#FFD700');
       return;
     }
     if (this.abilities.includes(ab)) return;
     this.abilities.push(ab);
     if (ab === 'speed') { this.speed = 7; this.thrustForce = 0.72; }
+    this.ensureValidWeaponSelection();
     SFX.pickup();
     const names = {
       speed: 'SPEED BOOST!',
@@ -1155,6 +1173,7 @@ const player = {
   },
 
   handleAttack() {
+    this.ensureValidWeaponSelection();
     if (!mouse.leftDown && !mouseClickLeft) return;
     if (this.attackCooldown > 0) return;
 
