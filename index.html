@@ -310,7 +310,7 @@ const tv = {  // touch-virtual state
   aimHold: 0,                    // frames finger has been held down
   aimLockTriggered: false,
   // Buttons
-  jumpId:   -1,
+  fireId:   -1,
   switchId: -1,
 };
 
@@ -403,10 +403,11 @@ canvas.addEventListener('touchstart', function(e) {
   for (const t of e.changedTouches) {
     const { x, y } = _tPos(t);
 
-    // ── THRUST button ──
+    // ── FIRE button ──
     if (_inBtn(x, y, TOUCH_BTN_JUMP)) {
-      tv.jumpId = t.identifier;
-      keys['Space'] = true;
+      tv.fireId = t.identifier;
+      mouse.leftDown = true;
+      mouseClickLeft = true;
       continue;
     }
     // ── SWITCH WEAPON button ──
@@ -431,7 +432,6 @@ canvas.addEventListener('touchstart', function(e) {
       tv.aimActive = true; tv.aimId = t.identifier;
       tv.aimX = x; tv.aimY = y; tv.aimStartX = x; tv.aimStartY = y; tv.aimHold = 0; tv.aimLockTriggered = false;
       mouse.x = x; mouse.y = y;
-      mouseClickLeft = true;  // single tap fires one shot
     }
   }
 }, { passive: false });
@@ -467,10 +467,10 @@ canvas.addEventListener('touchend', function(e) {
     }
     if (t.identifier === tv.aimId) {
       tv.aimActive = false; tv.aimId = -1;
-      tv.aimHold = 0; tv.aimLockTriggered = false; mouse.leftDown = false;
+      tv.aimHold = 0; tv.aimLockTriggered = false;
     }
-    if (t.identifier === tv.jumpId) {
-      tv.jumpId = -1; keys['Space'] = false;
+    if (t.identifier === tv.fireId) {
+      tv.fireId = -1; mouse.leftDown = false;
     }
     if (t.identifier === tv.switchId) {
       tv.switchId = -1;
@@ -483,7 +483,7 @@ canvas.addEventListener('touchcancel', function(e) {
   tv.joyActive = false; tv.joyId = -1;
   tv.joyDX = 0; tv.joyDY = 0; tv._joyFlicked = false;
   tv.aimActive = false; tv.aimId = -1; tv.aimHold = 0; tv.aimLockTriggered = false;
-  tv.jumpId = -1; tv.switchId = -1;
+  tv.fireId = -1; tv.switchId = -1;
   keys['ArrowLeft'] = false; keys['ArrowRight'] = false; keys['Space'] = false;
   mouse.leftDown = false;
 }, { passive: false });
@@ -497,7 +497,7 @@ function applyTouchToKeys() {
     if (tv.joyDY < -0.3) {
       keys['Space'] = true;
     } else {
-      if (tv.jumpId === -1) keys['Space'] = false;
+      keys['Space'] = false;
     }
   }
   // Aim zone — held finger fires continuously (sustained fire)
@@ -513,7 +513,6 @@ function applyTouchToKeys() {
         return;
       }
     }
-    if (tv.aimHold > 12 && !targetLock.active) mouse.leftDown = true;
   }
 }
 
@@ -523,21 +522,18 @@ function drawTouchControls() {
   const ts = viewport.touchScale;
 
   // ── THRUST button ─────────────────────────────────────────
-  const jPressed = tv.jumpId !== -1;
+  const jPressed = tv.fireId !== -1;
   ctx.globalAlpha = jPressed ? 0.85 : 0.50;
   ctx.fillStyle   = jPressed ? 'rgba(80,160,255,0.75)' : 'rgba(20,50,90,0.55)';
   ctx.strokeStyle = '#88CCFF'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y, TOUCH_BTN_JUMP.r, 0, Math.PI*2);
   ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#FFFFFF'; ctx.font = `bold ${Math.round(14 * ts)}px monospace`; ctx.textAlign = 'center';
-  ctx.fillText('THRUST', TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y + 5 * ts);
-  // Flame glyph instead of arrow
-  ctx.fillStyle = '#FF8800';
-  ctx.beginPath();
-  ctx.moveTo(TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y - 28 * ts);
-  ctx.lineTo(TOUCH_BTN_JUMP.x - 8 * ts, TOUCH_BTN_JUMP.y - 14 * ts);
-  ctx.lineTo(TOUCH_BTN_JUMP.x + 8 * ts, TOUCH_BTN_JUMP.y - 14 * ts);
-  ctx.closePath(); ctx.fill();
+  ctx.fillText('FIRE', TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y + 5 * ts);
+  ctx.fillStyle = '#FF5533';
+  ctx.beginPath(); ctx.arc(TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y - 18 * ts, 10 * ts, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#FFD2AA'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(TOUCH_BTN_JUMP.x, TOUCH_BTN_JUMP.y - 18 * ts, 15 * ts, 0, Math.PI*2); ctx.stroke();
 
   // ── SWITCH WEAPON button ─────────────────────────────────
   const sPressed = tv.switchId !== -1;
@@ -2185,7 +2181,7 @@ function drawHUD() {
   // Controls hint (bottom left, small)
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   ctx.font = '10px monospace';
-  ctx.fillText(compactHud ? 'Touch: hold a boss part to LOCK, then tap right side to fire.' : 'WASD:Move | Space/W:Thrust | LClick:Attack | RClick:Switch', 10, H-10);
+  ctx.fillText(compactHud ? 'Touch: aim/hold on right, FIRE button shoots, hold on boss to LOCK.' : 'WASD:Move | Space/W:Thrust | LClick:Attack | RClick:Switch', 10, H-10);
 }
 
 // ── Title Screen ───────────────────────────────────────────
