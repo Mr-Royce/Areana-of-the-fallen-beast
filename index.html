@@ -275,6 +275,7 @@ function stopMusic() {
 const keys = {};
 const mouse = { x: 0, y: 0, leftDown: false };
 let mouseClickLeft = false, mouseClickRight = false;
+const targetLock = { active: false, type: null, limbId: null };
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('keydown', e => { keys[e.code] = true; resumeAudio(); });
@@ -305,7 +306,9 @@ const tv = {  // touch-virtual state
   // Aim / attack zone
   aimActive: false, aimId: -1,
   aimX: W * 0.65,  aimY: H * 0.4,
+  aimStartX: W * 0.65, aimStartY: H * 0.4,
   aimHold: 0,                    // frames finger has been held down
+  aimLockTriggered: false,
   // Buttons
   jumpId:   -1,
   switchId: -1,
@@ -321,6 +324,78 @@ function _tPos(touch) {
   };
 }
 function _inBtn(x, y, btn) { return Math.hypot(x - btn.x, y - btn.y) <= (btn.hitR || btn.r); }
+
+function clearTargetLock() {
+  targetLock.active = false;
+  targetLock.type = null;
+  targetLock.limbId = null;
+}
+
+function getLockTargetPoint() {
+  if (!targetLock.active || !boss.alive) return null;
+  if (targetLock.type === 'limb') {
+    const limb = boss.limbs.find(l => l.id === targetLock.limbId && l.alive);
+    if (!limb) {
+      clearTargetLock();
+      return null;
+    }
+    return { x: boss.x + limb.ox, y: boss.y + limb.oy, limb };
+  }
+  if (targetLock.type === 'core') {
+    if (!boss.alive) {
+      clearTargetLock();
+      return null;
+    }
+    if (!boss.allLimbsDestroyed) {
+      clearTargetLock();
+      return null;
+    }
+    return { x: boss.x, y: boss.y, core: true };
+  }
+  clearTargetLock();
+  return null;
+}
+
+function getPlayerAimPoint() {
+  return getLockTargetPoint() || { x: mouse.x, y: mouse.y };
+}
+
+function tryLockTargetAt(x, y) {
+  let found = null;
+  for (const limb of boss.limbs) {
+    if (!limb.alive) continue;
+    const lx = boss.x + limb.ox - limb.w / 2;
+    const ly = boss.y + limb.oy - limb.h / 2;
+    const pad = 18;
+    if (x >= lx - pad && x <= lx + limb.w + pad && y >= ly - pad && y <= ly + limb.h + pad) {
+      found = { type: 'limb', limbId: limb.id, label: limb.label };
+      break;
+    }
+  }
+  if (!found && boss.allLimbsDestroyed && dist({ x, y }, { x: boss.x, y: boss.y }) <= 80) {
+    found = { type: 'core', limbId: null, label: 'CORE' };
+  }
+
+  if (!found) {
+    if (targetLock.active) {
+      clearTargetLock();
+      notify('TARGET LOCK CLEARED', '#88CCFF');
+    }
+    return false;
+  }
+
+  if (targetLock.active && targetLock.type === found.type && targetLock.limbId === found.limbId) {
+    clearTargetLock();
+    notify('TARGET LOCK CLEARED', '#88CCFF');
+    return false;
+  }
+
+  targetLock.active = true;
+  targetLock.type = found.type;
+  targetLock.limbId = found.limbId;
+  notify(`TARGET LOCKED: ${found.label.toUpperCase()}`, '#88CCFF');
+  return true;
+}
 
 canvas.addEventListener('touchstart', function(e) {
   e.preventDefault();
@@ -354,7 +429,7 @@ canvas.addEventListener('touchstart', function(e) {
     // ── Aim / attack zone (right side) ──
     if (!tv.aimActive) {
       tv.aimActive = true; tv.aimId = t.identifier;
-      tv.aimX = x; tv.aimY = y; tv.aimHold = 0;
+      tv.aimX = x; tv.aimY = y; tv.aimStartX = x; tv.aimStartY = y; tv.aimHold = 0; tv.aimLockTriggered = false;
       mouse.x = x; mouse.y = y;
       mouseClickLeft = true;  // single tap fires one shot
     }
@@ -392,7 +467,7 @@ canvas.addEventListener('touchend', function(e) {
     }
     if (t.identifier === tv.aimId) {
       tv.aimActive = false; tv.aimId = -1;
-      tv.aimHold = 0; mouse.leftDown = false;
+      tv.aimHold = 0; tv.aimLockTriggered = false; mouse.leftDown = false;
     }
     if (t.identifier === tv.jumpId) {
       tv.jumpId = -1; keys['Space'] = false;
@@ -407,7 +482,7 @@ canvas.addEventListener('touchcancel', function(e) {
   e.preventDefault();
   tv.joyActive = false; tv.joyId = -1;
   tv.joyDX = 0; tv.joyDY = 0; tv._joyFlicked = false;
-  tv.aimActive = false; tv.aimId = -1; tv.aimHold = 0;
+  tv.aimActive = false; tv.aimId = -1; tv.aimHold = 0; tv.aimLockTriggered = false;
   tv.jumpId = -1; tv.switchId = -1;
   keys['ArrowLeft'] = false; keys['ArrowRight'] = false; keys['Space'] = false;
   mouse.leftDown = false;
@@ -429,7 +504,16 @@ function applyTouchToKeys() {
   if (tv.aimActive) {
     tv.aimHold++;
     mouse.x = tv.aimX; mouse.y = tv.aimY;
-    if (tv.aimHold > 12) mouse.leftDown = true;
+    const moved = Math.hypot(tv.aimX - tv.aimStartX, tv.aimY - tv.aimStartY);
+    if (!tv.aimLockTriggered && tv.aimHold >= 16 && moved < 22) {
+      tv.aimLockTriggered = true;
+      if (tryLockTargetAt(tv.aimX, tv.aimY)) {
+        mouse.leftDown = false;
+        mouseClickLeft = false;
+        return;
+      }
+    }
+    if (tv.aimHold > 12 && !targetLock.active) mouse.leftDown = true;
   }
 }
 
@@ -1178,6 +1262,7 @@ const player = {
     if (this.attackCooldown > 0) return;
 
     const wep = this.weapons[this.currentWeapon];
+    const aim = getPlayerAimPoint();
 
     if (wep === 'sword') {
       this.attackCooldown = 30;
@@ -1203,8 +1288,8 @@ const player = {
     } else if (wep === 'gun') {
       this.attackCooldown = 18;
       SFX.gun();
-      const dx = mouse.x - this.cx;
-      const dy = mouse.y - this.cy;
+      const dx = aim.x - this.cx;
+      const dy = aim.y - this.cy;
       const len = Math.hypot(dx, dy) || 1;
       spawnProjectile({
         x: this.cx, y: this.cy,
@@ -1215,8 +1300,8 @@ const player = {
     } else if (wep === 'torch') {
       this.attackCooldown = 20;
       SFX.gun();
-      const dx = mouse.x - this.cx;
-      const dy = mouse.y - this.cy;
+      const dx = aim.x - this.cx;
+      const dy = aim.y - this.cy;
       const len = Math.hypot(dx, dy) || 1;
       for (let i = -1; i <= 1; i++) {
         const spread = i * 0.15;
@@ -1230,8 +1315,8 @@ const player = {
     } else if (wep === 'missile') {
       this.attackCooldown = 45;
       SFX.missile();
-      const dx = mouse.x - this.cx;
-      const dy = mouse.y - this.cy;
+      const dx = aim.x - this.cx;
+      const dy = aim.y - this.cy;
       const len = Math.hypot(dx, dy) || 1;
       spawnProjectile({
         x: this.cx, y: this.cy,
@@ -1243,8 +1328,8 @@ const player = {
     } else if (wep === 'bomb') {
       this.attackCooldown = 50;
       SFX.explosion();
-      const dx = mouse.x - this.cx;
-      const dy = mouse.y - this.cy;
+      const dx = aim.x - this.cx;
+      const dy = aim.y - this.cy;
       const len = Math.hypot(dx, dy) || 1;
       spawnProjectile({
         x: this.cx, y: this.cy,
@@ -1263,8 +1348,8 @@ const player = {
         return;
       }
       this.attackCooldown = 20;
-      const dx = mouse.x - this.cx;
-      const dy = mouse.y - this.cy;
+      const dx = aim.x - this.cx;
+      const dy = aim.y - this.cy;
       const len = Math.hypot(dx, dy) || 1;
       spawnProjectile({
         x: this.cx, y: this.cy,
@@ -1866,7 +1951,8 @@ const boss = {
 
 // ── Weapon Reticle ─────────────────────────────────────────
 function drawReticle() {
-  const mx = mouse.x, my = mouse.y;
+  const aim = getPlayerAimPoint();
+  const mx = aim.x, my = aim.y;
   const wep = player.weapons[player.currentWeapon];
   ctx.save();
   ctx.lineWidth = 2;
@@ -1942,6 +2028,23 @@ function drawReticle() {
     ctx.moveTo(mx + 12, my - 22);
     ctx.lineTo(mx + 14, my - 18);
     ctx.stroke();
+  }
+
+  const lockPoint = getLockTargetPoint();
+  if (lockPoint) {
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(mx, my, 22, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(mx - 30, my); ctx.lineTo(mx - 14, my);
+    ctx.moveTo(mx + 14, my); ctx.lineTo(mx + 30, my);
+    ctx.moveTo(mx, my - 30); ctx.lineTo(mx, my - 14);
+    ctx.moveTo(mx, my + 14); ctx.lineTo(mx, my + 30);
+    ctx.stroke();
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('LOCK', mx, my - 28);
   }
 
   ctx.restore();
@@ -2082,7 +2185,7 @@ function drawHUD() {
   // Controls hint (bottom left, small)
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
   ctx.font = '10px monospace';
-  ctx.fillText(compactHud ? 'Touch: left move, right aim, tap THRUST/WPN.' : 'WASD:Move | Space/W:Thrust | LClick:Attack | RClick:Switch', 10, H-10);
+  ctx.fillText(compactHud ? 'Touch: hold a boss part to LOCK, then tap right side to fire.' : 'WASD:Move | Space/W:Thrust | LClick:Attack | RClick:Switch', 10, H-10);
 }
 
 // ── Title Screen ───────────────────────────────────────────
@@ -2200,6 +2303,7 @@ function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
 function initGame() {
   stopMusic();
+  clearTargetLock();
 
   // Reset player
   player.x = 200; player.y = 600;
