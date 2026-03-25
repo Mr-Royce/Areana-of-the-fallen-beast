@@ -1,0 +1,19 @@
+{
+  "name": "Arena of the Fallen Beast",
+  "short_name": "Fallen Beast",
+  "description": "Boss-rush action game tuned for mobile touch play.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#05020f",
+  "theme_color": "#05020f",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
